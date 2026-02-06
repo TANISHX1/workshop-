@@ -8,12 +8,6 @@ i am developer i am tanish
 
 
 
-
-
-
-
-
-
 wlo1: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
         inet 10.128.54.231  netmask 255.255.255.0  broadcast 10.128.54.255
         inet6 2409:40c4:10e7:4420:2986:7e2e:5911:e8d6  prefixlen 64  scopeid 0x0<global>
@@ -24,3 +18,6 @@ wlo1: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
         TX packets 654845  bytes 627471317 (598.4 MiB)
         TX errors 0  dropped 133 overruns 0  carrier 0  collisions 0
 
+
+
+ia 
