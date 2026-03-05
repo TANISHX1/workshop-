@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Seat Result — Exam Seat Locator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="bg-grid"></div>
+
+  <header>
+    <div class="header-inner">
+      <a href="/" class="logo">
+        <span class="logo-icon">◈</span>
+        <span class="logo-text">SeatFinder</span>
+      </a>
+      <div style="display: flex; align-items: center; gap: 1.5rem;">
+        <label class="theme-switch" title="Toggle Theme">
+          <input type="checkbox" id="themeToggle" aria-label="Toggle dark mode">
+          <div class="slider"></div>
+        </label>
+        <div class="header-badge">Exam Portal</div>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-container result-main">
+
+    <!-- Success Banner -->
+    <div class="result-banner">
+      <div class="result-banner-icon">✓</div>
+      <div>
+        <div class="result-banner-title">Seat Found!</div>
+        <div class="result-banner-sub">{{ enrollment }}</div>
+      </div>
+    </div>
+
+    <!-- Seat Details Card -->
+    <div class="details-grid">
+      <div class="detail-card">
+        <div class="detail-label">Classroom</div>
+        <div class="detail-value accent">{{ seat.classroom_number }}</div>
+      </div>
+      <div class="detail-card">
+        <div class="detail-label">Date</div>
+        <div class="detail-value">{{ seat.exam_date }}</div>
+      </div>
+      <div class="detail-card">
+        <div class="detail-label">Timings</div>
+        <div class="detail-value">{{ seat.start_time }} – {{ seat.end_time }}</div>
+      </div>
+      <div class="detail-card highlight-card">
+        <div class="detail-label">Your Seat</div>
+        <div class="detail-value">
+          Row <strong>{{ seat.row + 1 }}</strong>, Col <strong>{{ seat.col + 1 }}</strong>
+        </div>
+      </div>
+    </div>
+
+    <!-- Classroom Layout -->
+
+    {# ── Compute column-block separator positions ────────────────────────────
+       Priority 1: block_structure  e.g. [3,4,3] → separators after col 3, 7
+       Priority 2: block_width      e.g. 2, cols=10 → separators after col 2,4,6,8
+       break_cols holds the cumulative 1-based column indices where a separator
+       is inserted AFTER that column.
+    ──────────────────────────────────────────────────────────────────────── #}
+    {%- set ns = namespace(break_cols=[], running=0) -%}
+    {%- if seat.block_structure and seat.block_structure | length > 1 -%}
+      {%- for blk in seat.block_structure[:-1] -%}
+        {%- set ns.running = ns.running + blk -%}
+        {%- set ns.break_cols = ns.break_cols + [ns.running] -%}
+      {%- endfor -%}
+    {%- elif seat.block_width and seat.block_width > 0 -%}
+      {%- set ns2 = namespace(cur=seat.block_width) -%}
+      {%- for _ in range((seat.columns // seat.block_width) - 1) -%}
+        {%- set ns.break_cols = ns.break_cols + [ns2.cur] -%}
+        {%- set ns2.cur = ns2.cur + seat.block_width -%}
+      {%- endfor -%}
+    {%- endif -%}
+
+    {# Build CSS grid-template-columns string: each seat col is minmax(70px,1fr),
+       each separator slot is 18px. #}
+    {%- set gtc_ns = namespace(gtc="") -%}
+    {%- for c in range(seat.columns) -%}
+      {%- if not loop.first -%}{%- set gtc_ns.gtc = gtc_ns.gtc + " " -%}{%- endif -%}
+      {%- set gtc_ns.gtc = gtc_ns.gtc + "minmax(85px, 1fr)" -%}
+      {%- if (c + 1) in ns.break_cols -%}
+        {%- set gtc_ns.gtc = gtc_ns.gtc + " 33px" -%}
+      {%- endif -%}
+    {%- endfor -%}
+
+    {%- set total_grid_cols = seat.columns + (ns.break_cols | length) -%}
+
+    <div class="layout-section">
+      <div class="layout-header">
+        <h2 class="layout-title">Classroom Layout — {{ seat.classroom_number }}</h2>
+        <span class="layout-meta">{{ seat.rows }} × {{ seat.columns }} grid</span>
+      </div>
+
+      <!-- Blackboard -->
+      <div class="blackboard">
+        <span>◼ BLACKBOARD / FRONT</span>
+      </div>
+
+      <!-- Seat Grid (wrapped in scroller so first column never clips on mobile) -->
+      <div class="grid-scroller">
+        <div class="seat-grid"
+             style="--cols: {{ total_grid_cols }}; --rows: {{ seat.rows }}; grid-template-columns: {{ gtc_ns.gtc }};">
+          {% for r in range(seat.rows) %}
+            {% for c in range(seat.columns) %}
+              {% set cell = seat.seats[r][c] %}
+              {% if r == seat.row and c == seat.col %}
+                {# Student's own seat #}
+                {% if cell %}
+                <div class="seat seat-mine"
+                     id="seat-mine-tile"
+                     style="{{ '--seat-color: ' + cell.color + ';' if cell.color else '' }}"
+                     title="{{ cell.roll_number }} - Set {{ cell.paper_set }} (Your Seat)"
+                     data-roll="{{ cell.roll_number }}"
+                     data-name="{{ cell.student_name or '' }}"
+                     data-batch="{{ cell.batch_label or '' }}"
+                     data-set="{{ cell.paper_set }}"
+                     data-room="{{ seat.classroom_number }}"
+                     data-row="{{ r + 1 }}"
+                     data-col="{{ c + 1 }}"
+                     data-date="{{ seat.exam_date }}"
+                     data-start="{{ seat.start_time }}"
+                     data-end="{{ seat.end_time }}"
+                     data-color="{{ cell.color or '' }}"
+                     data-position="{{ cell.position or '' }}">
+                  <span class="seat-label">{{ cell.roll_number }}</span>
+                  <span class="seat-set">{{ cell.paper_set }}</span>
+                  <span class="seat-badge">YOU</span>
+                </div>
+                {% endif %}
+              {% elif cell %}
+                {# Other occupied seats or special states #}
+                {% if cell.status == "broken" %}
+                  <div class="seat seat-broken" title="Broken/Unavailable">
+                    <span class="seat-label">✕</span>
+                  </div>
+                {% elif cell.is_unallocated %}
+                  <div class="seat seat-unallocated" title="Unallocated Seat">
+                    <span class="seat-label">-</span>
+                  </div>
+                {% else %}
+                  {# Normal occupied seat #}
+                  <div class="seat seat-occupied" style="{{ '--seat-color: ' + cell.color + ';' if cell.color else '' }}" title="{{ cell.roll_number }} - Set {{ cell.paper_set }}">
+                    <span class="seat-label">{{ cell.roll_number }}</span>
+                    <span class="seat-set">{{ cell.paper_set }}</span>
+                  </div>
+                {% endif %}
+              {% else %}
+                {# Unallocated seat #}
+                <div class="seat seat-unallocated" title="Unallocated">
+                  <span class="seat-label">-</span>
+                </div>
+              {% endif %}
+              {# Insert aisle separator after this column if it ends a block #}
+              {% if (c + 1) in ns.break_cols %}
+                <div class="block-sep-col" aria-hidden="true"></div>
+              {% endif %}
+            {% endfor %}
+          {% endfor %}
+
+          {# Column labels as final row inside the SAME grid — guarantees alignment #}
+          {%- set alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZ" -%}
+          {% for c in range(seat.columns) %}
+            <div class="axis-label">{{ alpha[c] }}</div>
+            {% if (c + 1) in ns.break_cols %}
+              <div class="block-sep-col block-sep-axis" aria-hidden="true"></div>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </div><!-- /.grid-scroller -->
+      <div class="scroll-hint" aria-hidden="true">← swipe to scroll →</div>
+    </div><!-- /.layout-section -->
+
+    <!-- Legend -->
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-dot dot-mine"></div>
+        <span>Your Seat</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot dot-occupied"></div>
+        <span>Occupied</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot dot-unallocated"></div>
+        <span>Unallocated</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot dot-broken"></div>
+        <span>Broken/Unavailable</span>
+      </div>
+    </div>
+
+    <a href="/" class="back-btn">← Search Again</a>
+
+    <!-- ── Seat Info Card Overlay ──────────────────────────────────────── -->
+    <div id="seat-info-overlay" class="seat-info-overlay" aria-hidden="true"></div>
+    <div id="seat-info-card" class="seat-info-card" role="dialog" aria-modal="true" aria-label="Your Seat Details">
+      <button class="sic-close" aria-label="Close">✕</button>
+      <div class="sic-header" id="sic-header">
+        <div class="sic-roll" id="sic-roll"></div>
+        <div class="sic-name" id="sic-name"></div>
+      </div>
+      <div class="sic-body">
+        <div class="sic-row">
+          <span class="sic-label">Batch</span>
+          <span class="sic-val" id="sic-batch"></span>
+        </div>
+        <div class="sic-row">
+          <span class="sic-label">Paper Set</span>
+          <span class="sic-val" id="sic-set"></span>
+        </div>
+        <div class="sic-row">
+          <span class="sic-label">Room</span>
+          <span class="sic-val" id="sic-room"></span>
+        </div>
+        <div class="sic-row">
+          <span class="sic-label">Grid Reference</span>
+          <span class="sic-val" id="sic-seat"></span>
+        </div>
+        <div class="sic-row">
+          <span class="sic-label">Seat Position</span>
+          <span class="sic-val" id="sic-pos"></span>
+        </div>
+        <div class="sic-row">
+          <span class="sic-label">Exam Date</span>
+          <span class="sic-val" id="sic-date"></span>
+        </div>
+        <div class="sic-row">
+          <span class="sic-label">Timings</span>
+          <span class="sic-val" id="sic-time"></span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <span class="footer-text">Exam Seat Locator System &copy; 2026</span>
+  </footer>
+
+  <script>
+    // Theme Toggle
+    const themeToggle = document.getElementById('themeToggle');
+    const html = document.documentElement;
+
+    // Load saved theme preference or default to dark
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    html.setAttribute('data-theme', savedTheme);
+    themeToggle.checked = savedTheme === 'light';
+
+    // Theme toggle handler
+    themeToggle.addEventListener('change', () => {
+      document.body.classList.add('theme-transitioning');
+      const newTheme = themeToggle.checked ? 'light' : 'dark';
+      html.setAttribute('data-theme', newTheme);
+      localStorage.setItem('theme', newTheme);
+      setTimeout(() => document.body.classList.remove('theme-transitioning'), 250);
+    });
+
+    // Animate the student's seat
+    const mySeat = document.querySelector('.seat-mine');
+    if (mySeat) {
+      mySeat.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    // Staggered reveal animation for seats
+    document.querySelectorAll('.seat').forEach((seat, i) => {
+      seat.style.animationDelay = `${i * 18}ms`;
+      seat.classList.add('seat-reveal');
+    });
+
+    // ── Seat Info Card ──────────────────────────────────────────────────
+    const mineCard    = document.getElementById('seat-mine-tile');
+    const infoCard    = document.getElementById('seat-info-card');
+    const infoOverlay = document.getElementById('seat-info-overlay');
+
+    function showInfoCard() {
+      if (!mineCard || !infoCard) return;
+      const d = mineCard.dataset;
+      document.getElementById('sic-roll').textContent  = d.roll;
+      document.getElementById('sic-name').textContent  = d.name  || '—';
+      document.getElementById('sic-batch').textContent = d.batch || '—';
+      document.getElementById('sic-set').textContent   = 'Set ' + d.set;
+      document.getElementById('sic-room').textContent  = d.room;
+      document.getElementById('sic-seat').textContent  = 'Row ' + d.row + ', Col ' + d.col;
+      document.getElementById('sic-pos').textContent   = d.position || '—';
+      document.getElementById('sic-date').textContent  = d.date;
+      document.getElementById('sic-time').textContent  = d.start + ' – ' + d.end;
+      // Apply seat colour to header strip (remove property if empty so CSS fallback activates)
+      const hdr = document.getElementById('sic-header');
+      if (d.color) {
+        hdr.style.setProperty('--sic-color', d.color);
+      } else {
+        hdr.style.removeProperty('--sic-color');
+      }
+      infoCard.classList.add('sic-visible');
+      infoOverlay.classList.add('sic-visible');
+      infoOverlay.setAttribute('aria-hidden', 'false');
+    }
+
+    function hideInfoCard() {
+      if (!infoCard) return;
+      infoCard.classList.remove('sic-visible');
+      infoOverlay.classList.remove('sic-visible');
+      infoOverlay.setAttribute('aria-hidden', 'true');
+    }
+
+    if (mineCard) {
+      mineCard.addEventListener('click', showInfoCard);
+      mineCard.style.cursor = 'pointer';
+    }
+    infoOverlay?.addEventListener('click', hideInfoCard);
+    document.querySelector('.sic-close')?.addEventListener('click', hideInfoCard);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') hideInfoCard(); });
+  </script>
+</body>
+</html>
